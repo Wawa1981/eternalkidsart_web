@@ -1,22 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { 
-  Users, 
-  Heart, 
-  MessageCircle, 
+import {
+  Users,
+  Heart,
+  MessageCircle,
   Send,
   Image as ImageIcon,
   Mail,
-  Loader2
+  Loader2,
+  Upload,
+  X
 } from 'lucide-react';
 import { Input } from '@/Components/ui/input';
 import { Textarea } from '@/Components/ui/textarea';
 import { Button } from '@/Components/ui/button';
 import { Card, CardContent, CardHeader } from '@/Components/ui/card';
-import { Badge } from '@/Components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/Components/ui/dialog';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -24,14 +24,23 @@ import { toast } from 'sonner';
 
 export default function Community() {
   const [user, setUser] = useState(null);
+
   const [newPost, setNewPost] = useState('');
+
+  // Attachement possible : soit un drawing existant, soit une image uploadée depuis téléphone
   const [selectedDrawing, setSelectedDrawing] = useState(null);
+  const [selectedUploadUrl, setSelectedUploadUrl] = useState(null);
+  const [uploadingAttach, setUploadingAttach] = useState(false);
+
   const [showDrawingSelector, setShowDrawingSelector] = useState(false);
+
   const [commentingPost, setCommentingPost] = useState(null);
   const [newComment, setNewComment] = useState('');
+
   const [messagingUser, setMessagingUser] = useState(null);
   const [newMessage, setNewMessage] = useState('');
 
+  const fileInputRef = useRef(null);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -46,17 +55,20 @@ export default function Community() {
     loadUser();
   }, []);
 
+  // POSTS
   const { data: posts = [], isLoading: loadingPosts } = useQuery({
     queryKey: ['posts'],
     queryFn: () => base44.entities.Post.list('-created_date', 100)
   });
 
+  // MES DESSINS
   const { data: myDrawings = [] } = useQuery({
-    queryKey: ['myDrawings'],
-    queryFn: () => base44.entities.Drawing.filter({ created_by: user?.email }, '-created_date', 20),
+    queryKey: ['myDrawings', user?.email],
+    queryFn: () => base44.entities.Drawing.filter({ created_by: user?.email }, '-created_date', 30),
     enabled: !!user
   });
 
+  // USERS
   const { data: allUsers = [] } = useQuery({
     queryKey: ['users'],
     queryFn: () => base44.entities.User.list(),
@@ -69,39 +81,46 @@ export default function Community() {
       queryClient.invalidateQueries({ queryKey: ['posts'] });
       setNewPost('');
       setSelectedDrawing(null);
+      setSelectedUploadUrl(null);
       toast.success('Post publié !');
+    },
+    onError: (e) => {
+      console.error('Create post error:', e);
+      toast.error("Impossible de publier (droits ou erreur serveur).");
     }
   });
 
   const likeMutation = useMutation({
     mutationFn: async (postId) => {
-      // Vérifier si déjà liké
-      const existingLikes = await base44.entities.Like.filter({ 
-        post_id: postId, 
-        user_email: user.email 
+      const existingLikes = await base44.entities.Like.filter({
+        post_id: postId,
+        user_email: user.email
       });
-      
-      const post = posts.find(p => p.id === postId);
-      
+
+      const post = posts.find((p) => p.id === postId);
+
       if (existingLikes.length > 0) {
-        // Unlike
         await base44.entities.Like.delete(existingLikes[0].id);
-        await base44.entities.Post.update(postId, { 
-          likes_count: Math.max(0, (post.likes_count || 0) - 1) 
+        await base44.entities.Post.update(postId, {
+          likes_count: Math.max(0, (post.likes_count || 0) - 1)
         });
       } else {
-        // Like
-        await base44.entities.Like.create({ 
-          post_id: postId, 
-          user_email: user.email 
+        await base44.entities.Like.create({
+          post_id: postId,
+          user_email: user.email,
+          created_by: user.email
         });
-        await base44.entities.Post.update(postId, { 
-          likes_count: (post.likes_count || 0) + 1 
+        await base44.entities.Post.update(postId, {
+          likes_count: (post.likes_count || 0) + 1
         });
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['posts'] });
+    },
+    onError: (e) => {
+      console.error('Like error:', e);
+      toast.error("Impossible d'aimer ce post.");
     }
   });
 
@@ -110,9 +129,11 @@ export default function Community() {
       await base44.entities.PostComment.create({
         post_id: postId,
         content,
-        author_name: user.full_name || user.email
+        author_name: user.full_name || user.email,
+        created_by: user.email
       });
-      const post = posts.find(p => p.id === postId);
+
+      const post = posts.find((p) => p.id === postId);
       await base44.entities.Post.update(postId, {
         comments_count: (post.comments_count || 0) + 1
       });
@@ -123,6 +144,10 @@ export default function Community() {
       setNewComment('');
       setCommentingPost(null);
       toast.success('Commentaire ajouté !');
+    },
+    onError: (e) => {
+      console.error('Comment error:', e);
+      toast.error("Impossible d'ajouter le commentaire.");
     }
   });
 
@@ -132,32 +157,109 @@ export default function Community() {
       setNewMessage('');
       setMessagingUser(null);
       toast.success('Message envoyé !');
+    },
+    onError: (e) => {
+      console.error('Message error:', e);
+      toast.error("Impossible d'envoyer le message.");
     }
   });
 
   const { data: postComments = [] } = useQuery({
     queryKey: ['postComments', commentingPost?.id],
-    queryFn: () => base44.entities.PostComment.filter(
-      { post_id: commentingPost.id }, 
-      '-created_date'
-    ),
+    queryFn: () =>
+      base44.entities.PostComment.filter({ post_id: commentingPost.id }, '-created_date'),
     enabled: !!commentingPost
   });
 
   const handleCreatePost = () => {
-    if (!newPost.trim() && !selectedDrawing) return;
-    
+    if (!newPost.trim() && !selectedDrawing && !selectedUploadUrl) return;
+
+    const imageUrl =
+      selectedUploadUrl ||
+      selectedDrawing?.enhanced_image_url ||
+      selectedDrawing?.image_url ||
+      null;
+
     createPostMutation.mutate({
       content: newPost,
       author_name: user.full_name || user.email,
-      drawing_id: selectedDrawing?.id,
-      image_url: selectedDrawing?.enhanced_image_url || selectedDrawing?.image_url
+      drawing_id: selectedDrawing?.id || null,
+      image_url: imageUrl,
+      created_by: user.email
     });
   };
 
   const handleSelectDrawing = (drawing) => {
     setSelectedDrawing(drawing);
+    setSelectedUploadUrl(null);
     setShowDrawingSelector(false);
+  };
+
+  const handleRemoveAttachment = () => {
+    setSelectedDrawing(null);
+    setSelectedUploadUrl(null);
+  };
+
+  const openDrawingSelector = () => {
+    // évite les overlays qui se marchent dessus
+    setCommentingPost(null);
+    setMessagingUser(null);
+    setShowDrawingSelector(true);
+  };
+
+  const openComments = (post) => {
+    setShowDrawingSelector(false);
+    setMessagingUser(null);
+    setCommentingPost(post);
+  };
+
+  const openMessageForPost = (post) => {
+    setShowDrawingSelector(false);
+    setCommentingPost(null);
+
+    // Essaie de retrouver l'utilisateur à partir de author_name (email ou full_name)
+    const target =
+      allUsers.find((u) => u.email === post.author_name) ||
+      allUsers.find((u) => u.full_name === post.author_name) ||
+      null;
+
+    if (!target) {
+      toast.info("Impossible de retrouver l'utilisateur pour lui envoyer un message.");
+      return;
+    }
+    if (target.email === user.email) {
+      toast.info("Tu ne peux pas t'envoyer un message à toi-même 😄");
+      return;
+    }
+    setMessagingUser(target);
+  };
+
+  const handlePickFromPhone = () => {
+    // ferme les autres modals pour éviter les soucis d'empilement
+    setCommentingPost(null);
+    setMessagingUser(null);
+    setShowDrawingSelector(true);
+
+    // déclenche le file picker natif
+    setTimeout(() => fileInputRef.current?.click(), 0);
+  };
+
+  const handleFileChosen = async (file) => {
+    if (!file) return;
+
+    setUploadingAttach(true);
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      setSelectedUploadUrl(file_url);
+      setSelectedDrawing(null);
+      setShowDrawingSelector(false);
+      toast.success('Image ajoutée au post');
+    } catch (e) {
+      console.error('Upload attach error:', e);
+      toast.error("Upload impossible. Regarde la console / Network.");
+    } finally {
+      setUploadingAttach(false);
+    }
   };
 
   if (!user) {
@@ -168,15 +270,17 @@ export default function Community() {
     );
   }
 
+  const attachmentPreviewUrl =
+    selectedUploadUrl ||
+    selectedDrawing?.enhanced_image_url ||
+    selectedDrawing?.image_url ||
+    null;
+
   return (
     <div className="min-h-screen p-4 sm:p-6 lg:p-8">
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center"
-        >
+        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center">
           <h1 className="font-handwritten text-4xl sm:text-5xl bg-gradient-to-r from-violet-500 to-purple-500 bg-clip-text text-transparent mb-2">
             Communauté
           </h1>
@@ -193,19 +297,21 @@ export default function Community() {
               className="border-0 bg-gray-50 rounded-xl resize-none"
               rows={3}
             />
-            
-            {selectedDrawing && (
-              <div className="relative w-32 h-32 rounded-xl overflow-hidden">
-                <img 
-                  src={selectedDrawing.enhanced_image_url || selectedDrawing.image_url}
-                  alt={selectedDrawing.title}
+
+            {/* Preview pièce jointe */}
+            {attachmentPreviewUrl && (
+              <div className="relative w-40 h-40 rounded-xl overflow-hidden bg-gray-50 border">
+                <img
+                  src={attachmentPreviewUrl}
+                  alt="Attachment"
                   className="w-full h-full object-cover"
                 />
                 <button
-                  onClick={() => setSelectedDrawing(null)}
-                  className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center"
+                  onClick={handleRemoveAttachment}
+                  className="absolute top-2 right-2 bg-black/70 text-white rounded-full w-7 h-7 flex items-center justify-center"
+                  title="Retirer"
                 >
-                  ×
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             )}
@@ -214,15 +320,19 @@ export default function Community() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowDrawingSelector(true)}
+                onClick={openDrawingSelector}
                 className="text-violet-600"
               >
                 <ImageIcon className="w-4 h-4 mr-2" />
                 Ajouter un dessin
               </Button>
+
               <Button
                 onClick={handleCreatePost}
-                disabled={(!newPost.trim() && !selectedDrawing) || createPostMutation.isPending}
+                disabled={
+                  (!newPost.trim() && !selectedDrawing && !selectedUploadUrl) ||
+                  createPostMutation.isPending
+                }
                 className="bg-gradient-to-r from-violet-500 to-purple-500 text-white rounded-full"
               >
                 {createPostMutation.isPending ? (
@@ -261,7 +371,7 @@ export default function Community() {
                   <CardHeader className="p-4 pb-2">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center text-white font-bold">
-                        {post.author_name.charAt(0).toUpperCase()}
+                        {String(post.author_name || '?').charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1">
                         <h3 className="font-semibold text-gray-800">{post.author_name}</h3>
@@ -269,23 +379,27 @@ export default function Community() {
                           {format(new Date(post.created_date), 'dd MMM yyyy à HH:mm', { locale: fr })}
                         </p>
                       </div>
-                      {post.created_by === user.email && allUsers.length > 0 && (
+
+                      {/* Message : seulement si ce n'est pas ton post */}
+                      {post.author_name !== user.email && (
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => setMessagingUser(allUsers.find(u => u.email !== user.email))}
+                          onClick={() => openMessageForPost(post)}
+                          title="Envoyer un message"
                         >
                           <Mail className="w-4 h-4" />
                         </Button>
                       )}
                     </div>
                   </CardHeader>
+
                   <CardContent className="p-4 pt-2 space-y-3">
                     <p className="text-gray-700 whitespace-pre-wrap">{post.content}</p>
-                    
+
                     {post.image_url && (
                       <div className="rounded-xl overflow-hidden">
-                        <img 
+                        <img
                           src={post.image_url}
                           alt="Post"
                           className="w-full max-h-96 object-contain bg-gray-50"
@@ -301,13 +415,14 @@ export default function Community() {
                         disabled={likeMutation.isPending}
                         className="text-rose-500"
                       >
-                        <Heart className={`w-5 h-5 mr-1 ${post.likes_count > 0 ? 'fill-rose-500' : ''}`} />
+                        <Heart className={`w-5 h-5 mr-1 ${(post.likes_count || 0) > 0 ? 'fill-rose-500' : ''}`} />
                         {post.likes_count || 0}
                       </Button>
+
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setCommentingPost(post)}
+                        onClick={() => openComments(post)}
                         className="text-violet-600"
                       >
                         <MessageCircle className="w-5 h-5 mr-1" />
@@ -322,40 +437,115 @@ export default function Community() {
         </div>
 
         {/* Drawing Selector Dialog */}
-        <Dialog open={showDrawingSelector} onOpenChange={setShowDrawingSelector}>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <Dialog
+          open={showDrawingSelector}
+          onOpenChange={(v) => {
+            setShowDrawingSelector(v);
+          }}
+        >
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto bg-white">
             <DialogHeader>
-              <DialogTitle>Choisir un dessin</DialogTitle>
+              <DialogTitle>Ajouter un dessin au post</DialogTitle>
             </DialogHeader>
-            <div className="grid grid-cols-3 gap-3">
-              {myDrawings.map(drawing => (
-                <div
-                  key={drawing.id}
-                  onClick={() => handleSelectDrawing(drawing)}
-                  className="cursor-pointer rounded-xl overflow-hidden hover:ring-2 ring-violet-500 transition-all"
-                >
-                  <img 
-                    src={drawing.enhanced_image_url || drawing.image_url}
-                    alt={drawing.title}
-                    className="w-full aspect-square object-cover"
-                  />
+
+            {/* input file caché */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                // reset pour pouvoir re-choisir la même image
+                e.target.value = '';
+                if (f) handleFileChosen(f);
+              }}
+              className="hidden"
+            />
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button
+                onClick={handlePickFromPhone}
+                disabled={uploadingAttach}
+                className="rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white"
+              >
+                {uploadingAttach ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Upload...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4 mr-2" />
+                    Choisir depuis mon téléphone
+                  </>
+                )}
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSelectedDrawing(null);
+                  setSelectedUploadUrl(null);
+                  setShowDrawingSelector(false);
+                }}
+                className="rounded-xl"
+              >
+                Fermer
+              </Button>
+            </div>
+
+            <div className="mt-5">
+              <p className="text-sm text-gray-500 mb-3">
+                Ou sélectionne un dessin déjà dans ton espace :
+              </p>
+
+              {myDrawings.length === 0 ? (
+                <div className="text-center py-10 bg-gray-50 rounded-xl">
+                  <p className="text-gray-500">Aucun dessin trouvé.</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Ajoute d'abord un dessin dans “Mon Espace”, ou utilise “Choisir depuis mon téléphone”.
+                  </p>
                 </div>
-              ))}
+              ) : (
+                <div className="grid grid-cols-3 gap-3">
+                  {myDrawings.map((drawing) => (
+                    <div
+                      key={drawing.id}
+                      onClick={() => handleSelectDrawing(drawing)}
+                      className="cursor-pointer rounded-xl overflow-hidden hover:ring-2 ring-violet-500 transition-all"
+                      title={drawing.title}
+                    >
+                      <img
+                        src={drawing.enhanced_image_url || drawing.image_url}
+                        alt={drawing.title}
+                        className="w-full aspect-square object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </DialogContent>
         </Dialog>
 
         {/* Comments Dialog */}
-        <Dialog open={!!commentingPost} onOpenChange={() => setCommentingPost(null)}>
-          <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+        <Dialog
+          open={!!commentingPost}
+          onOpenChange={() => {
+            setCommentingPost(null);
+            setNewComment('');
+          }}
+        >
+          <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto bg-white">
             <DialogHeader>
               <DialogTitle>Commentaires</DialogTitle>
             </DialogHeader>
+
             <div className="space-y-4">
-              {postComments.map(comment => (
+              {postComments.map((comment) => (
                 <div key={comment.id} className="flex gap-3">
                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-                    {comment.author_name.charAt(0).toUpperCase()}
+                    {String(comment.author_name || '?').charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1 bg-gray-50 rounded-xl p-3">
                     <p className="font-semibold text-sm">{comment.author_name}</p>
@@ -366,10 +556,11 @@ export default function Community() {
                   </div>
                 </div>
               ))}
+
               {postComments.length === 0 && (
                 <p className="text-center text-gray-500 py-4">Aucun commentaire</p>
               )}
-              
+
               <div className="flex gap-2 pt-3 border-t">
                 <Input
                   placeholder="Écrire un commentaire..."
@@ -378,14 +569,20 @@ export default function Community() {
                   className="flex-1"
                 />
                 <Button
-                  onClick={() => commentMutation.mutate({ 
-                    postId: commentingPost.id, 
-                    content: newComment 
-                  })}
+                  onClick={() =>
+                    commentMutation.mutate({
+                      postId: commentingPost.id,
+                      content: newComment
+                    })
+                  }
                   disabled={!newComment.trim() || commentMutation.isPending}
                   className="bg-gradient-to-r from-violet-500 to-purple-500 text-white"
                 >
-                  <Send className="w-4 h-4" />
+                  {commentMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
                 </Button>
               </div>
             </div>
@@ -393,11 +590,18 @@ export default function Community() {
         </Dialog>
 
         {/* Message Dialog */}
-        <Dialog open={!!messagingUser} onOpenChange={() => setMessagingUser(null)}>
-          <DialogContent>
+        <Dialog
+          open={!!messagingUser}
+          onOpenChange={() => {
+            setMessagingUser(null);
+            setNewMessage('');
+          }}
+        >
+          <DialogContent className="bg-white">
             <DialogHeader>
-              <DialogTitle>Envoyer un message à {messagingUser?.full_name}</DialogTitle>
+              <DialogTitle>Envoyer un message à {messagingUser?.full_name || messagingUser?.email}</DialogTitle>
             </DialogHeader>
+
             <div className="space-y-4">
               <Textarea
                 placeholder="Votre message..."
@@ -406,15 +610,25 @@ export default function Community() {
                 rows={5}
               />
               <Button
-                onClick={() => messageMutation.mutate({
-                  recipient_email: messagingUser.email,
-                  sender_name: user.full_name || user.email,
-                  content: newMessage
-                })}
+                onClick={() =>
+                  messageMutation.mutate({
+                    recipient_email: messagingUser.email,
+                    sender_name: user.full_name || user.email,
+                    content: newMessage,
+                    created_by: user.email
+                  })
+                }
                 disabled={!newMessage.trim() || messageMutation.isPending}
                 className="w-full bg-gradient-to-r from-violet-500 to-purple-500 text-white"
               >
-                Envoyer
+                {messageMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Envoi...
+                  </>
+                ) : (
+                  'Envoyer'
+                )}
               </Button>
             </div>
           </DialogContent>
