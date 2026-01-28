@@ -1,3 +1,4 @@
+// src/Layout.jsx
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from './utils';
@@ -15,7 +16,8 @@ import {
   User,
   Sparkles,
   Gamepad2,
-  Brush
+  Brush,
+  Inbox
 } from 'lucide-react';
 import { Button } from '@/Components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -44,7 +46,7 @@ export default function Layout({ children, currentPageName }) {
 
   // Pages protégées (redirige vers Landing si pas loggé)
   useEffect(() => {
-    const protectedPages = new Set(['Dashboard', 'Museum', 'Games', 'PaintStudio']);
+    const protectedPages = new Set(['Dashboard', 'Museum', 'Games', 'PaintStudio', 'Messages']);
     if (userLoaded && !user && protectedPages.has(currentPageName)) {
       navigate(createPageUrl('Landing'), { replace: true });
     }
@@ -67,12 +69,15 @@ export default function Layout({ children, currentPageName }) {
     { name: 'Mon Espace', page: 'Dashboard', icon: Palette, requiresAuth: true },
     { name: 'Musée Virtuel', page: 'Museum', icon: Sparkles, requiresAuth: true },
 
-    // ✅ AJOUT
     { name: 'Jeux', page: 'Games', icon: Gamepad2, requiresAuth: true },
     { name: 'Atelier dessin', page: 'PaintStudio', icon: Brush, requiresAuth: true },
 
     { name: 'Galerie Publique', page: 'Gallery', icon: Image },
     { name: 'Communauté', page: 'Community', icon: Users },
+
+    // ✅ NEW
+    { name: 'Messages', page: 'Messages', icon: Inbox, requiresAuth: true },
+
     { name: 'Boutique', page: 'Shop', icon: ShoppingBag },
   ];
 
@@ -282,9 +287,7 @@ export default function Layout({ children, currentPageName }) {
         </AnimatePresence>
       </header>
 
-      <main className="pt-16">
-        {children}
-      </main>
+      <main className="pt-16">{children}</main>
     </div>
   );
 }
