@@ -1,0 +1,27 @@
+{
+  "app": {
+    "title": "Eternal Kids Art"
+  },
+  "auth": {
+    "login": "Connexion",
+    "email": "Email",
+    "password": "Mot de passe",
+    "submit": "Se connecter",
+    "invalidCredentials": "Identifiants invalides"
+  },
+  "common": {
+    "language": "Langue",
+    "french": "Français",
+    "english": "Anglais"
+  },
+  "landing": {
+    "badge": "La magie de l’art enfantin préservée",
+    "title1": "Transformez les dessins",
+    "title2": "de vos enfants en",
+    "title3": "souvenirs éternels",
+    "subtitle": "Créez une galerie d’art unique pour chaque enfant ! Sublimez leurs œuvres avec l’IA, exposez-les dans un musée virtuel et imprimez-les sur vos objets préférés.",
+    "ctaStart": "Commencer gratuitement",
+    "ctaDemo": "Voir la démo",
+    "trusted": "familles conquises"
+  }
+}

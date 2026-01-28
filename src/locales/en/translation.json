@@ -1,0 +1,27 @@
+{
+  "app": {
+    "title": "Eternal Kids Art"
+  },
+  "auth": {
+    "login": "Login",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "invalidCredentials": "Invalid credentials"
+  },
+  "common": {
+    "language": "Language",
+    "french": "French",
+    "english": "English"
+  },
+  "landing": {
+    "badge": "Preserve the magic of childhood art",
+    "title1": "Turn your children’s drawings",
+    "title2": "into",
+    "title3": "timeless keepsakes",
+    "subtitle": "Create a unique art gallery for each child! Enhance their creations with AI, display them in a virtual museum, and print them on your favorite items.",
+    "ctaStart": "Start for free",
+    "ctaDemo": "Watch the demo",
+    "trusted": "happy families"
+  }
+}
