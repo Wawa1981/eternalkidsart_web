@@ -1,5 +1,5 @@
 // src/Layout.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from './utils';
 import { base44 } from '@/api/base44Client';
@@ -27,8 +27,18 @@ export default function Layout({ children, currentPageName }) {
   const [userLoaded, setUserLoaded] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
-  const [authTab, setAuthTab] = useState("login");
+  const [authTab, setAuthTab] = useState('login');
   const navigate = useNavigate();
+
+  const openAuth = useCallback((tab = 'login') => {
+    setAuthTab(tab);
+    setAuthOpen(true);
+    try {
+      window.dispatchEvent(new CustomEvent('auth:open', { detail: { tab } }));
+    } catch {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -44,22 +54,23 @@ export default function Layout({ children, currentPageName }) {
     loadUser();
   }, []);
 
-  // Pages protégées (redirige vers Landing si pas loggé)
+  // Pages protégées (redirige vers Landing + ouvre la modale si pas loggé)
   useEffect(() => {
     const protectedPages = new Set(['Dashboard', 'Museum', 'Games', 'PaintStudio', 'Messages']);
     if (userLoaded && !user && protectedPages.has(currentPageName)) {
       navigate(createPageUrl('Landing'), { replace: true });
+      openAuth('login');
     }
-  }, [user, userLoaded, currentPageName, navigate]);
+  }, [user, userLoaded, currentPageName, navigate, openAuth]);
 
   useEffect(() => {
     const onAuthOpen = (ev) => {
-      const tab = ev?.detail?.tab || "login";
+      const tab = ev?.detail?.tab || 'login';
       setAuthTab(tab);
       setAuthOpen(true);
     };
-    window.addEventListener("auth:open", onAuthOpen);
-    return () => window.removeEventListener("auth:open", onAuthOpen);
+    window.addEventListener('auth:open', onAuthOpen);
+    return () => window.removeEventListener('auth:open', onAuthOpen);
   }, []);
 
   const isLandingPage = currentPageName === 'Landing';
@@ -68,20 +79,13 @@ export default function Layout({ children, currentPageName }) {
     { name: 'Accueil', page: 'Landing', icon: Home },
     { name: 'Mon Espace', page: 'Dashboard', icon: Palette, requiresAuth: true },
     { name: 'Musée Virtuel', page: 'Museum', icon: Sparkles, requiresAuth: true },
-
     { name: 'Jeux', page: 'Games', icon: Gamepad2, requiresAuth: true },
     { name: 'Atelier dessin', page: 'PaintStudio', icon: Brush, requiresAuth: true },
-
     { name: 'Galerie Publique', page: 'Gallery', icon: Image },
     { name: 'Communauté', page: 'Community', icon: Users },
-
-    // ✅ NEW
     { name: 'Messages', page: 'Messages', icon: Inbox, requiresAuth: true },
-
-    { name: 'Boutique', page: 'Shop', icon: ShoppingBag },
+    { name: 'Boutique', page: 'Shop', icon: ShoppingBag }
   ];
-
-  const filteredNavItems = navItems.filter(item => !item.requiresAuth || user);
 
   const doLogoutAndGoLanding = async () => {
     try {
@@ -90,6 +94,17 @@ export default function Layout({ children, currentPageName }) {
     setUser(null);
     setIsMenuOpen(false);
     navigate(createPageUrl('Landing'), { replace: true });
+  };
+
+  const handleNavClick = (e, item) => {
+    if (item?.requiresAuth && !user) {
+      e.preventDefault();
+      setIsMenuOpen(false);
+      navigate(createPageUrl('Landing'), { replace: true });
+      openAuth('login');
+      return;
+    }
+    setIsMenuOpen(false);
   };
 
   if (isLandingPage && !user) {
@@ -161,18 +176,22 @@ export default function Layout({ children, currentPageName }) {
             </Link>
 
             <nav className="hidden md:flex items-center gap-1">
-              {filteredNavItems.map((item) => {
+              {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentPageName === item.page;
+                const locked = item.requiresAuth && !user;
+
                 return (
                   <Link
                     key={item.page}
                     to={createPageUrl(item.page)}
+                    onClick={(e) => handleNavClick(e, item)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
                       isActive
                         ? 'bg-gradient-to-r from-rose-200 to-amber-200 text-rose-700'
                         : 'text-gray-600 hover:bg-rose-50 hover:text-rose-600'
-                    }`}
+                    } ${locked ? 'opacity-70' : ''}`}
+                    title={locked ? 'Connecte-toi pour accéder' : item.name}
                   >
                     <Icon className="w-4 h-4" />
                     {item.name}
@@ -201,13 +220,13 @@ export default function Layout({ children, currentPageName }) {
                 <div className="hidden md:flex items-center gap-2">
                   <Button
                     variant="ghost"
-                    onClick={() => base44.auth.redirectToLogin("login")}
+                    onClick={() => openAuth('login')}
                     className="text-gray-600"
                   >
                     Se connecter
                   </Button>
                   <Button
-                    onClick={() => base44.auth.redirectToLogin("register")}
+                    onClick={() => openAuth('register')}
                     className="bg-gradient-to-r from-rose-400 to-amber-400 hover:from-rose-500 hover:to-amber-500 text-white rounded-full"
                   >
                     Créer un compte
@@ -236,25 +255,29 @@ export default function Layout({ children, currentPageName }) {
               className="md:hidden bg-white border-t border-rose-100"
             >
               <div className="px-4 py-4 space-y-2">
-                {filteredNavItems.map((item) => {
+                {navItems.map((item) => {
                   const Icon = item.icon;
                   const isActive = currentPageName === item.page;
+                  const locked = item.requiresAuth && !user;
+
                   return (
                     <Link
                       key={item.page}
                       to={createPageUrl(item.page)}
-                      onClick={() => setIsMenuOpen(false)}
+                      onClick={(e) => handleNavClick(e, item)}
                       className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                         isActive
                           ? 'bg-gradient-to-r from-rose-100 to-amber-100 text-rose-700'
                           : 'text-gray-600 hover:bg-rose-50'
-                      }`}
+                      } ${locked ? 'opacity-70' : ''}`}
+                      title={locked ? 'Connecte-toi pour accéder' : item.name}
                     >
                       <Icon className="w-5 h-5" />
                       {item.name}
                     </Link>
                   );
                 })}
+
                 {user ? (
                   <Button
                     variant="ghost"
@@ -267,14 +290,20 @@ export default function Layout({ children, currentPageName }) {
                 ) : (
                   <div className="pt-2 space-y-2">
                     <Button
-                      onClick={() => base44.auth.redirectToLogin("register")}
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        openAuth('register');
+                      }}
                       className="w-full bg-gradient-to-r from-rose-400 to-amber-400 text-white rounded-xl"
                     >
                       Créer un compte
                     </Button>
                     <Button
                       variant="ghost"
-                      onClick={() => base44.auth.redirectToLogin("login")}
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        openAuth('login');
+                      }}
                       className="w-full rounded-xl"
                     >
                       Se connecter
