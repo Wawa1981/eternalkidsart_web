@@ -1,10 +1,39 @@
-// Client "Base44-like" qui parle à ton backend Express (server/server.js).
+// Client "Base44-like" qui parle à ton backend Express.
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8787";
 
+const TOKEN_KEY = "auth_token";
+
+function getToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setToken(token) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+  } catch {}
+}
+
+function clearToken() {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {}
+}
+
 async function http(path, { method = "GET", headers = {}, body } = {}) {
+  const token = getToken();
+
+  const finalHeaders = {
+    ...headers,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
   const res = await fetch(`${API_BASE}${path}`, {
     method,
-    headers,
+    headers: finalHeaders,
     body,
   });
 
@@ -36,7 +65,6 @@ function qs(obj = {}) {
 
 function makeEntity(name) {
   return {
-    // list(sort, limit) => GET /api/entities/:name?sort=-created_date&limit=50
     async list(sort = null, limit = null) {
       const query = {};
       if (sort) query.sort = sort;
@@ -44,7 +72,6 @@ function makeEntity(name) {
       return http(`/api/entities/${name}${qs(query)}`);
     },
 
-    // filter(where, sort, limit) => GET /api/entities/:name?field=value&sort=...&limit=...
     async filter(where = {}, sort = null, limit = null) {
       const query = { ...where };
       if (sort) query.sort = sort;
@@ -68,7 +95,6 @@ function makeEntity(name) {
       });
     },
 
-    // nécessaire pour Like.delete(...) / etc
     async delete(id) {
       return http(`/api/entities/${name}/${encodeURIComponent(id)}`, {
         method: "DELETE",
@@ -79,38 +105,59 @@ function makeEntity(name) {
 
 export const base44 = {
   auth: {
+    // ✅ maintenant envoie Authorization automatiquement via http()
     async me() {
       return http("/api/auth/me");
     },
+
+    // ✅ stocke le token, et renvoie seulement le user (comme avant)
     async login({ email, password }) {
-      return http("/api/auth/login", {
+      const out = await http("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
+
+      // backend JWT: { user, token }
+      if (out?.token) setToken(out.token);
+      return out?.user ?? out; // compat
     },
+
+    // ✅ pareil pour register
     async register({ full_name, email, password }) {
-      return http("/api/auth/register", {
+      const out = await http("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ full_name, email, password }),
       });
+
+      if (out?.token) setToken(out.token);
+      return out?.user ?? out;
     },
+
+    // ✅ logout = supprimer token côté client
     async logout() {
-      return http("/api/auth/logout", { method: "POST" });
+      clearToken();
+      // optionnel: appeler le backend (pas nécessaire mais ok)
+      try {
+        await http("/api/auth/logout", { method: "POST" });
+      } catch {}
+      return { ok: true };
     },
+
     redirectToLogin(tab = "login") {
       window.dispatchEvent(new CustomEvent("auth:open", { detail: { tab } }));
     },
+
+    // utilitaires si besoin ailleurs
+    getToken,
+    clearToken,
   },
 
   entities: {
-    // ✅ déjà OK
     Drawing: makeEntity("drawing"),
     Album: makeEntity("album"),
     Child: makeEntity("child"),
-
-    // ✅ Community (doivent aussi exister côté serveur /api/entities)
     Post: makeEntity("post"),
     Like: makeEntity("like"),
     PostComment: makeEntity("postComment"),
@@ -123,12 +170,13 @@ export const base44 = {
       async UploadFile({ file }) {
         const fd = new FormData();
         fd.append("file", file);
+
         const out = await http("/api/integrations/core/upload-file", {
           method: "POST",
           body: fd,
+          // ne pas forcer Content-Type avec FormData
         });
 
-        // server renvoie { file_url: "/uploads/xxx" } => URL absolue
         if (out?.file_url && out.file_url.startsWith("/")) {
           return { file_url: `${API_BASE}${out.file_url}` };
         }
@@ -145,4 +193,3 @@ export const base44 = {
     },
   },
 };
-   

@@ -51,7 +51,7 @@ function pickOtherParticipant(msg, myEmail) {
 function displayNameForThread(otherEmail, usersIndex) {
   const u = usersIndex.get(otherEmail);
   if (!u) return otherEmail || 'Inconnu';
-  return u.full_name ? `${u.full_name}` : (u.email || otherEmail || 'Inconnu');
+  return u.full_name ? `${u.full_name}` : u.email || otherEmail || 'Inconnu';
 }
 
 function initials(nameOrEmail) {
@@ -160,9 +160,9 @@ function EmojiPicker({ open, onClose, onPick }) {
 
 function DaySeparator({ date }) {
   return (
-    <div className="flex items-center gap-3 my-3">
+    <div className="flex items-center gap-2 my-2">
       <div className="h-px bg-gray-200 flex-1" />
-      <div className="text-xs text-gray-500 bg-white px-3 py-1 rounded-full border">
+      <div className="text-[11px] text-gray-500 bg-white px-2 py-0.5 rounded-full border">
         {format(date, 'EEEE dd MMMM', { locale: fr })}
       </div>
       <div className="h-px bg-gray-200 flex-1" />
@@ -175,36 +175,32 @@ function MediaGrid({ attachments }) {
   if (!atts.length) return null;
 
   return (
-    <div className="mt-2 grid grid-cols-2 gap-2">
+    <div className="mt-2 grid grid-cols-2 gap-1.5">
       {atts.map((a, idx) => {
         const url = a?.url;
         const type = String(a?.type || '');
         const name = a?.name || 'media';
-
         if (!url) return null;
 
-        const isImg = type.startsWith('image/');
-        const isVid = type.startsWith('video/');
-
-        if (isImg) {
+        if (type.startsWith('image/')) {
           return (
             <a
               key={`${url}-${idx}`}
               href={url}
               target="_blank"
               rel="noreferrer"
-              className="block overflow-hidden rounded-2xl border bg-white shadow-sm"
+              className="block overflow-hidden rounded-xl border bg-white shadow-sm"
               title={name}
             >
-              <img src={url} alt={name} className="w-full h-40 object-cover" />
+              <img src={url} alt={name} className="w-full h-28 sm:h-32 object-cover" />
             </a>
           );
         }
 
-        if (isVid) {
+        if (type.startsWith('video/')) {
           return (
-            <div key={`${url}-${idx}`} className="overflow-hidden rounded-2xl border bg-white shadow-sm" title={name}>
-              <video src={url} controls className="w-full h-40 object-cover" />
+            <div key={`${url}-${idx}`} className="overflow-hidden rounded-xl border bg-white shadow-sm" title={name}>
+              <video src={url} controls className="w-full h-28 sm:h-32 object-cover" />
             </div>
           );
         }
@@ -215,7 +211,7 @@ function MediaGrid({ attachments }) {
             href={url}
             target="_blank"
             rel="noreferrer"
-            className="rounded-2xl border bg-white shadow-sm p-3 text-sm text-gray-700 hover:bg-gray-50"
+            className="rounded-xl border bg-white shadow-sm p-2 text-xs text-gray-700 hover:bg-gray-50"
           >
             📎 {name}
           </a>
@@ -233,17 +229,17 @@ function ChatBubble({ mine, text, time, attachments }) {
     <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
       <div
         className={[
-          'max-w-[78%] sm:max-w-[65%] rounded-2xl px-4 py-2 shadow-sm border',
+          'max-w-[88%] sm:max-w-[70%] rounded-xl px-3 py-2 shadow-sm border',
           mine
             ? 'bg-gradient-to-r from-violet-500 to-purple-500 text-white border-transparent'
             : 'bg-white text-gray-800 border-gray-200'
         ].join(' ')}
       >
-        {hasText && <div className="whitespace-pre-wrap break-words leading-relaxed">{text}</div>}
+        {hasText && <div className="whitespace-pre-wrap break-words leading-relaxed text-sm">{text}</div>}
         {hasMedia && <MediaGrid attachments={attachments} />}
 
         {time && (
-          <div className={`mt-1 text-[11px] ${mine ? 'text-white/80' : 'text-gray-400'}`}>
+          <div className={`mt-1 text-[10px] ${mine ? 'text-white/80' : 'text-gray-400'}`}>
             {time}
           </div>
         )}
@@ -260,6 +256,10 @@ export default function Messages() {
   const queryClient = useQueryClient();
 
   const [user, setUser] = useState(null);
+
+  // inbox | sent | new
+  const [tab, setTab] = useState('inbox');
+
   const [selectedThread, setSelectedThread] = useState(preselectTo);
   const [search, setSearch] = useState('');
   const [onlyUnread, setOnlyUnread] = useState(false);
@@ -267,15 +267,17 @@ export default function Messages() {
   const [draft, setDraft] = useState('');
   const [emojiOpen, setEmojiOpen] = useState(false);
 
-  const [tab, setTab] = useState('inbox'); // inbox | sent | new
-
-  // UPLOAD
+  // UPLOAD (inbox/new uniquement)
   const fileInputRef = useRef(null);
   const [pendingFiles, setPendingFiles] = useState([]); // File[]
   const [pendingPreviews, setPendingPreviews] = useState([]); // {id,url,type,name}
   const [isDragging, setIsDragging] = useState(false);
 
   const listRef = useRef(null);
+
+  const isMobileChatOpen = tab !== 'new' && !!selectedThread;
+  const showSidebarOnMobile = !isMobileChatOpen;
+  const showChatOnMobile = isMobileChatOpen;
 
   useEffect(() => {
     (async () => {
@@ -340,12 +342,9 @@ export default function Messages() {
     for (const m of allMessages) {
       const other = pickOtherParticipant(m, myEmail);
       if (!other) continue;
-      const prev = groups.get(other) || {
-        otherEmail: other,
-        lastDate: 0,
-        unreadCount: 0,
-        lastSnippet: ''
-      };
+
+      const prev = groups.get(other) || { otherEmail: other, lastDate: 0, unreadCount: 0, lastSnippet: '' };
+
       const t = safeDate(m.created_date)?.getTime() || 0;
       const atts = safeParseAttachments(m.attachments);
       const mediaLabel = attachmentLabel(atts);
@@ -354,13 +353,16 @@ export default function Messages() {
         prev.lastDate = t;
         prev.lastSnippet = clampSnippet(m.content, 80) || mediaLabel || '—';
       }
+
       const recipient = m?.recipient_email || '';
       const isForMe = myEmail && recipient === myEmail;
       if (isForMe && !m.is_read) prev.unreadCount += 1;
+
       groups.set(other, prev);
     }
 
     let arr = Array.from(groups.values());
+
     if (search.trim()) {
       const s = search.toLowerCase();
       arr = arr.filter((t) => {
@@ -380,11 +382,9 @@ export default function Messages() {
     for (const m of sent) {
       const other = pickOtherParticipant(m, myEmail);
       if (!other) continue;
-      const prev = groups.get(other) || {
-        otherEmail: other,
-        lastDate: 0,
-        lastSnippet: ''
-      };
+
+      const prev = groups.get(other) || { otherEmail: other, lastDate: 0, lastSnippet: '' };
+
       const t = safeDate(m.created_date)?.getTime() || 0;
       const atts = safeParseAttachments(m.attachments);
       const mediaLabel = attachmentLabel(atts);
@@ -393,10 +393,12 @@ export default function Messages() {
         prev.lastDate = t;
         prev.lastSnippet = clampSnippet(m.content, 80) || mediaLabel || '—';
       }
+
       groups.set(other, prev);
     }
 
     let arr = Array.from(groups.values());
+
     if (search.trim()) {
       const s = search.toLowerCase();
       arr = arr.filter((t) => {
@@ -415,38 +417,31 @@ export default function Messages() {
     return allMessages.filter((m) => pickOtherParticipant(m, myEmail) === selectedThread);
   }, [allMessages, selectedThread, user?.email]);
 
-  const selectedSentMessages = useMemo(() => {
-    const myEmail = user?.email || '';
-    if (!selectedThread) return [];
-    return sent.filter((m) => pickOtherParticipant(m, myEmail) === selectedThread);
-  }, [sent, selectedThread, user?.email]);
-
-  const unreadCountTotal = useMemo(() => {
-    return (inbox || []).filter((m) => !m.is_read).length;
-  }, [inbox]);
+  const unreadCountTotal = useMemo(() => (inbox || []).filter((m) => !m.is_read).length, [inbox]);
 
   useEffect(() => {
     if (!listRef.current) return;
     listRef.current.scrollTop = listRef.current.scrollHeight;
-  }, [selectedThread, selectedMessages.length, selectedSentMessages.length, tab]);
+  }, [selectedThread, selectedMessages.length, tab]);
 
   const markThreadReadMutation = useMutation({
     mutationFn: async (otherEmail) => {
       const myEmail = user.email;
-      const msgs = (inbox || []).filter((m) => {
-        const other = pickOtherParticipant(m, myEmail);
-        return other === otherEmail && !m.is_read;
-      });
-      for (const m of msgs) {
-        await base44.entities.Message.update(m.id, { is_read: true });
-      }
+      const msgs = (inbox || []).filter((m) => pickOtherParticipant(m, myEmail) === otherEmail && !m.is_read);
+      for (const m of msgs) await base44.entities.Message.update(m.id, { is_read: true });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['messagesInbox', user?.email] });
-    }
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['messagesInbox', user?.email] })
   });
 
-  // UPLOAD UI helpers
+  useEffect(() => {
+    if (selectedThread && user?.email && tab === 'inbox') markThreadReadMutation.mutate(selectedThread);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedThread, user?.email, tab]);
+
+  useEffect(() => {
+    if (preselectTo) setSelectedThread(preselectTo);
+  }, [preselectTo]);
+
   useEffect(() => {
     return () => {
       pendingPreviews.forEach((p) => {
@@ -488,9 +483,7 @@ export default function Messages() {
       return t.startsWith('image/') || t.startsWith('video/');
     });
 
-    if (allowed.length !== incoming.length) {
-      toast.error('Seulement photos / vidéos.');
-    }
+    if (allowed.length !== incoming.length) toast.error('Seulement photos / vidéos.');
 
     const MAX = 6;
     setPendingFiles((prev) => {
@@ -528,12 +521,7 @@ export default function Messages() {
         const uploaded = [];
         for (const f of pendingFiles) {
           const up = await uploadFile(f);
-          uploaded.push({
-            url: up.url,
-            name: up.name,
-            type: up.type,
-            size: up.size
-          });
+          uploaded.push({ url: up.url, name: up.name, type: up.type, size: up.size });
         }
         attachments = uploaded;
       }
@@ -543,32 +531,35 @@ export default function Messages() {
         sender_email: user.email,
         sender_name: user.full_name || user.email,
         content: hasText ? content : '',
-        attachments, // ✅ champ ajouté dans Message
+        attachments,
         is_read: false,
         created_by: user.email
       });
     },
     onSuccess: () => {
+      const to = selectedThread;
       setDraft('');
       clearPending();
       queryClient.invalidateQueries({ queryKey: ['messagesInbox', user?.email] });
       queryClient.invalidateQueries({ queryKey: ['messagesSent', user?.email] });
       toast.success('Envoyé ✅');
+
+      if (tab === 'new' && to) {
+        setTab('inbox');
+        setSelectedThread(to);
+        navigate(`/Messages?to=${encodeURIComponent(to)}`, { replace: true });
+      }
     },
     onError: (e) => {
       console.error(e);
-      if (String(e?.message || '').includes('empty')) {
-        toast.error('Écris un message ou ajoute une photo/vidéo 🙂');
-        return;
-      }
+      if (String(e?.message || '').includes('empty')) return toast.error('Écris un message ou ajoute une photo/vidéo 🙂');
+      if (String(e?.message || '').includes('no recipient')) return toast.error('Choisis un destinataire.');
       toast.error("Impossible d'envoyer le message.");
     }
   });
 
   const deleteOneMutation = useMutation({
-    mutationFn: async (msg) => {
-      await base44.entities.Message.delete(msg.id);
-    },
+    mutationFn: async (msg) => base44.entities.Message.delete(msg.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messagesInbox', user?.email] });
       queryClient.invalidateQueries({ queryKey: ['messagesSent', user?.email] });
@@ -584,9 +575,7 @@ export default function Messages() {
     mutationFn: async (otherEmail) => {
       const myEmail = user.email;
       const msgs = allMessages.filter((m) => pickOtherParticipant(m, myEmail) === otherEmail);
-      for (const m of msgs) {
-        await base44.entities.Message.delete(m.id);
-      }
+      for (const m of msgs) await base44.entities.Message.delete(m.id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messagesInbox', user?.email] });
@@ -601,16 +590,6 @@ export default function Messages() {
     }
   });
 
-  useEffect(() => {
-    if (preselectTo && !selectedThread) setSelectedThread(preselectTo);
-  }, [preselectTo, selectedThread]);
-
-  useEffect(() => {
-    if (selectedThread && user?.email && tab === 'inbox') {
-      markThreadReadMutation.mutate(selectedThread);
-    }
-  }, [selectedThread, user?.email, tab]);
-
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -619,78 +598,83 @@ export default function Messages() {
     );
   }
 
-  const selectedTitle = selectedThread
-    ? displayNameForThread(selectedThread, usersIndex)
-    : 'Sélectionne une conversation';
+  const selectedTitle = selectedThread ? displayNameForThread(selectedThread, usersIndex) : 'Sélectionne une conversation';
 
   const tabBtn = (active) =>
     active
-      ? 'rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white hover:from-violet-600 hover:to-purple-600 px-3 py-2 text-sm'
-      : 'rounded-xl border bg-white hover:bg-gray-50 px-3 py-2 text-sm';
+      ? 'rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white hover:from-violet-600 hover:to-purple-600 px-2.5 py-1.5 text-xs sm:text-sm'
+      : 'rounded-xl border bg-white hover:bg-gray-50 px-2.5 py-1.5 text-xs sm:text-sm';
 
   return (
-    <div className="min-h-screen p-4 sm:p-6 lg:p-8">
-      <div className="max-w-6xl mx-auto space-y-4">
+    <div className="min-h-screen p-2 sm:p-4 lg:p-6">
+      <div className="max-w-6xl mx-auto space-y-2 sm:space-y-3">
+        {/* Header */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" className="rounded-xl" onClick={() => navigate(-1)} title="Retour">
+          <div className="flex items-center gap-2 min-w-0">
+            <Button variant="ghost" className="rounded-xl h-9 px-2" onClick={() => navigate(-1)} title="Retour">
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <h1 className="font-handwritten text-4xl bg-gradient-to-r from-violet-500 to-purple-500 bg-clip-text text-transparent">
+
+            <h1 className="font-handwritten text-2xl sm:text-3xl bg-gradient-to-r from-violet-500 to-purple-500 bg-clip-text text-transparent truncate">
               Messages
             </h1>
 
             {unreadCountTotal > 0 && (
-              <span className="ml-2 text-xs bg-rose-500 text-white rounded-full px-2 py-1">
+              <span className="ml-1 text-[11px] bg-rose-500 text-white rounded-full px-2 py-1 flex-shrink-0">
                 {unreadCountTotal} non lu{unreadCountTotal > 1 ? 's' : ''}
               </span>
             )}
           </div>
         </div>
 
-        {/* Onglets (inchangés) */}
+        {/* Onglets */}
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className={tabBtn(tab === 'inbox')}
-            onClick={() => setTab('inbox')}
-          >
+          <button type="button" className={tabBtn(tab === 'inbox')} onClick={() => setTab('inbox')}>
             Réception {unreadCountTotal > 0 ? `(${unreadCountTotal})` : ''}
           </button>
-          <button
-            type="button"
-            className={tabBtn(tab === 'sent')}
-            onClick={() => setTab('sent')}
-          >
+          <button type="button" className={tabBtn(tab === 'sent')} onClick={() => setTab('sent')}>
             Envoyés
           </button>
           <button
             type="button"
             className={tabBtn(tab === 'new')}
-            onClick={() => setTab('new')}
+            onClick={() => {
+              setTab('new');
+              setSelectedThread('');
+              setDraft('');
+              clearPending();
+              navigate('/Messages', { replace: true });
+            }}
           >
             Nouveau
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Sidebar threads / liste des envoyés / nouveau */}
-          <Card className="bg-white/80 backdrop-blur border-0 shadow-lg lg:col-span-1">
-            <CardHeader className="pb-2">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 sm:gap-3">
+          {/* Sidebar */}
+          <Card
+            className={[
+              'bg-white/80 backdrop-blur border-0 shadow-lg lg:col-span-1',
+              showSidebarOnMobile ? 'block' : 'hidden',
+              'lg:block'
+            ].join(' ')}
+          >
+            <CardHeader className="p-3 pb-2">
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
                   <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <Input
-                    className="pl-9 rounded-xl"
+                    className="pl-9 rounded-xl h-9 text-sm"
                     placeholder="Rechercher…"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
                 </div>
+
                 {tab === 'inbox' && (
                   <Button
                     variant={onlyUnread ? 'default' : 'outline'}
-                    className={`rounded-xl ${onlyUnread ? 'bg-violet-600 hover:bg-violet-700' : ''}`}
+                    className={`rounded-xl h-9 w-9 p-0 ${onlyUnread ? 'bg-violet-600 hover:bg-violet-700' : ''}`}
                     onClick={() => setOnlyUnread((v) => !v)}
                     title="Filtrer non lus"
                   >
@@ -700,24 +684,24 @@ export default function Messages() {
               </div>
             </CardHeader>
 
-            <CardContent className="pt-2">
+            <CardContent className="p-3 pt-2">
               {loading ? (
-                <div className="py-10 text-center text-gray-500">
+                <div className="py-8 text-center text-gray-500">
                   <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-violet-500" />
                   Chargement…
                 </div>
               ) : (
                 <>
-                  {/* ONGLET RÉCEPTION */}
+                  {/* RÉCEPTION */}
                   {tab === 'inbox' && (
                     <>
                       {threads.length === 0 ? (
-                        <div className="py-10 text-center text-gray-500">
+                        <div className="py-8 text-center text-gray-500">
                           <Inbox className="w-10 h-10 mx-auto mb-2 text-gray-300" />
                           Aucune conversation
                         </div>
                       ) : (
-                        <div className="space-y-2">
+                        <div className="space-y-1.5">
                           {threads.map((t) => {
                             const active = t.otherEmail === selectedThread;
                             const name = displayNameForThread(t.otherEmail, usersIndex);
@@ -730,28 +714,28 @@ export default function Messages() {
                                   navigate(`/Messages?to=${encodeURIComponent(t.otherEmail)}`, { replace: true });
                                 }}
                                 className={[
-                                  'w-full text-left p-3 rounded-2xl border transition flex items-center gap-3',
+                                  'w-full text-left p-2.5 rounded-xl border transition flex items-center gap-2.5',
                                   active ? 'bg-violet-50 border-violet-200' : 'bg-white hover:bg-gray-50 border-gray-200'
                                 ].join(' ')}
                               >
-                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-rose-300 to-amber-300 flex items-center justify-center text-white font-bold text-sm">
+                                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-rose-300 to-amber-300 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
                                   {initials(name)}
                                 </div>
 
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center justify-between gap-2">
-                                    <div className="font-semibold text-gray-800 truncate">{name}</div>
+                                    <div className="font-semibold text-gray-800 truncate text-sm">{name}</div>
                                     {!!t.lastDate && (
-                                      <div className="text-[11px] text-gray-400 whitespace-nowrap">
+                                      <div className="text-[10px] text-gray-400 whitespace-nowrap">
                                         {format(new Date(t.lastDate), 'dd MMM HH:mm', { locale: fr })}
                                       </div>
                                     )}
                                   </div>
-                                  <div className="text-sm text-gray-600 truncate">{t.lastSnippet || '—'}</div>
+                                  <div className="text-xs text-gray-600 truncate">{t.lastSnippet || '—'}</div>
                                 </div>
 
                                 {t.unreadCount > 0 && (
-                                  <div className="bg-rose-500 text-white text-xs rounded-full px-2 py-0.5 flex-shrink-0">
+                                  <div className="bg-rose-500 text-white text-[11px] rounded-full px-2 py-0.5 flex-shrink-0">
                                     {t.unreadCount}
                                   </div>
                                 )}
@@ -763,16 +747,16 @@ export default function Messages() {
                     </>
                   )}
 
-                  {/* ONGLET ENVOYÉS */}
+                  {/* ENVOYÉS */}
                   {tab === 'sent' && (
                     <>
                       {sentThreads.length === 0 ? (
-                        <div className="py-10 text-center text-gray-500">
+                        <div className="py-8 text-center text-gray-500">
                           <Inbox className="w-10 h-10 mx-auto mb-2 text-gray-300" />
                           Aucun message envoyé.
                         </div>
                       ) : (
-                        <div className="space-y-2">
+                        <div className="space-y-1.5">
                           {sentThreads.map((t) => {
                             const active = t.otherEmail === selectedThread;
                             const name = displayNameForThread(t.otherEmail, usersIndex);
@@ -785,24 +769,24 @@ export default function Messages() {
                                   navigate(`/Messages?to=${encodeURIComponent(t.otherEmail)}`, { replace: true });
                                 }}
                                 className={[
-                                  'w-full text-left p-3 rounded-2xl border transition flex items-center gap-3',
+                                  'w-full text-left p-2.5 rounded-xl border transition flex items-center gap-2.5',
                                   active ? 'bg-violet-50 border-violet-200' : 'bg-white hover:bg-gray-50 border-gray-200'
                                 ].join(' ')}
                               >
-                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-rose-300 to-amber-300 flex items-center justify-center text-white font-bold text-sm">
+                                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-rose-300 to-amber-300 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
                                   {initials(name)}
                                 </div>
 
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center justify-between gap-2">
-                                    <div className="font-semibold text-gray-800 truncate">{name}</div>
+                                    <div className="font-semibold text-gray-800 truncate text-sm">{name}</div>
                                     {!!t.lastDate && (
-                                      <div className="text-[11px] text-gray-400 whitespace-nowrap">
+                                      <div className="text-[10px] text-gray-400 whitespace-nowrap">
                                         {format(new Date(t.lastDate), 'dd MMM HH:mm', { locale: fr })}
                                       </div>
                                     )}
                                   </div>
-                                  <div className="text-sm text-gray-600 truncate">{t.lastSnippet || '—'}</div>
+                                  <div className="text-xs text-gray-600 truncate">{t.lastSnippet || '—'}</div>
                                 </div>
                               </button>
                             );
@@ -812,9 +796,9 @@ export default function Messages() {
                     </>
                   )}
 
-                  {/* ONGLET NOUVEAU */}
+                  {/* NOUVEAU */}
                   {tab === 'new' && (
-                    <div className="space-y-3">
+                    <div className="space-y-2.5">
                       <div>
                         <label className="text-sm font-medium text-gray-700">Destinataire</label>
                         <select
@@ -833,27 +817,90 @@ export default function Messages() {
                         </select>
                       </div>
 
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="rounded-xl h-9"
+                          onClick={() => fileInputRef.current?.click()}
+                          title="Ajouter une photo ou une vidéo"
+                        >
+                          <Paperclip className="w-4 h-4 mr-2" />
+                          Photo/Vidéo
+                        </Button>
+
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*,video/*"
+                          multiple
+                          className="hidden"
+                          onChange={(e) => {
+                            addFiles(e.target.files);
+                            e.target.value = '';
+                          }}
+                        />
+                      </div>
+
+                      {pendingPreviews.length > 0 && (
+                        <div className="rounded-xl border bg-white p-2.5">
+                          <div className="flex items-center justify-between">
+                            <div className="text-xs text-gray-600">Pièces jointes</div>
+                            <button
+                              type="button"
+                              onClick={clearPending}
+                              className="text-xs text-rose-600 hover:text-rose-700"
+                            >
+                              Tout enlever
+                            </button>
+                          </div>
+
+                          <div className="mt-2 grid grid-cols-3 gap-2">
+                            {pendingPreviews.map((p, idx) => {
+                              const isImg = String(p.type || '').startsWith('image/');
+                              const isVid = String(p.type || '').startsWith('video/');
+                              return (
+                                <div key={p.id} className="relative overflow-hidden rounded-xl border bg-white">
+                                  <button
+                                    type="button"
+                                    onClick={() => removePending(idx)}
+                                    className="absolute top-1 right-1 z-10 bg-white/90 hover:bg-white rounded-full p-1 shadow"
+                                    title="Retirer"
+                                  >
+                                    <X className="w-4 h-4 text-gray-700" />
+                                  </button>
+
+                                  {isImg ? (
+                                    <img src={p.url} alt={p.name} className="w-full h-16 object-cover" />
+                                  ) : isVid ? (
+                                    <video src={p.url} className="w-full h-16 object-cover" />
+                                  ) : (
+                                    <div className="h-16 flex items-center justify-center text-xs text-gray-600">📎</div>
+                                  )}
+
+                                  <div className="px-2 py-1 text-[10px] text-gray-500 truncate">{p.name}</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
                       <div>
                         <label className="text-sm font-medium text-gray-700">Message</label>
                         <Textarea
                           value={draft}
                           onChange={(e) => setDraft(e.target.value)}
                           rows={6}
-                          className="mt-1 rounded-xl bg-white"
+                          className="mt-1 rounded-xl bg-white text-sm"
                           placeholder="Écris ton message…"
                         />
                       </div>
 
                       <Button
-                        onClick={() => {
-                          if (!selectedThread || (!draft.trim() && pendingFiles.length === 0)) {
-                            toast.error('Destinataire et message requis.');
-                            return;
-                          }
-                          sendMutation.mutate();
-                        }}
+                        onClick={() => sendMutation.mutate()}
                         disabled={!selectedThread || (!draft.trim() && pendingFiles.length === 0) || sendMutation.isPending}
-                        className="w-full rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white"
+                        className="w-full rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white h-10"
                       >
                         {sendMutation.isPending ? (
                           <>
@@ -874,25 +921,39 @@ export default function Messages() {
             </CardContent>
           </Card>
 
-          {/* Chat panel (affiche messages différents selon l'onglet) */}
+          {/* Chat panel */}
           <Card
-            className={`bg-white/80 backdrop-blur border-0 shadow-lg lg:col-span-2 ${
-              tab === 'new' ? 'hidden lg:block' : ''
-            }`}
+            className={[
+              'bg-white/80 backdrop-blur border-0 shadow-lg lg:col-span-2',
+              showChatOnMobile ? 'block' : 'hidden',
+              'lg:block'
+            ].join(' ')}
           >
-            <CardHeader className="pb-2">
+            <CardHeader className="p-3 pb-2">
               <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="font-semibold text-gray-800 truncate">{selectedTitle}</div>
-                  {selectedThread && (
-                    <div className="text-xs text-gray-500 truncate">{selectedThread}</div>
-                  )}
+                <div className="min-w-0 flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    className="rounded-xl lg:hidden h-9 px-2"
+                    onClick={() => {
+                      setSelectedThread('');
+                      navigate('/Messages', { replace: true });
+                    }}
+                    title="Retour aux conversations"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </Button>
+
+                  <div className="min-w-0">
+                    <div className="font-semibold text-gray-800 truncate text-sm sm:text-base">{selectedTitle}</div>
+                    {selectedThread && <div className="text-[11px] text-gray-500 truncate">{selectedThread}</div>}
+                  </div>
                 </div>
 
                 {selectedThread && tab !== 'new' && (
                   <Button
                     variant="outline"
-                    className="rounded-xl text-rose-600 border-rose-200 hover:bg-rose-50"
+                    className="rounded-xl text-rose-600 border-rose-200 hover:bg-rose-50 h-9 px-3"
                     onClick={() => {
                       const ok = window.confirm('Supprimer toute la conversation ? (irréversible)');
                       if (!ok) return;
@@ -901,46 +962,36 @@ export default function Messages() {
                     disabled={deleteThreadMutation.isPending}
                     title="Supprimer la conversation"
                   >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Supprimer
+                    <Trash2 className="w-4 h-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Supprimer</span>
                   </Button>
                 )}
               </div>
             </CardHeader>
 
-            <CardContent className="pt-2">
+            <CardContent className="p-3 pt-2">
               {!selectedThread ? (
-                <div className="py-16 text-center text-gray-500">
-                  Choisis une conversation à gauche.
-                </div>
+                <div className="py-12 text-center text-gray-500">Choisis une conversation.</div>
               ) : (
-                <>
+                <div className="flex flex-col h-[78vh] lg:h-[72vh]">
+                  {/* Messages */}
                   <div
                     ref={listRef}
-                    className="h-[52vh] sm:h-[58vh] overflow-y-auto rounded-2xl border bg-gradient-to-b from-white to-gray-50 p-4"
+                    className="flex-1 overflow-y-auto rounded-xl border bg-gradient-to-b from-white to-gray-50 p-3"
                   >
-                    {tab === 'inbox' && selectedMessages.length === 0 ? (
-                      <div className="py-14 text-center text-gray-500">
-                        Aucun message. Dis bonjour 👋
-                      </div>
-                    ) : tab === 'sent' && selectedSentMessages.length === 0 ? (
-                      <div className="py-14 text-center text-gray-500">
-                        Aucun message envoyé à cette personne.
-                      </div>
+                    {selectedMessages.length === 0 ? (
+                      <div className="py-12 text-center text-gray-500">Aucun message. Dis bonjour 👋</div>
                     ) : (
                       (() => {
                         const myEmail = user.email;
-                        const msgs = tab === 'inbox' ? selectedMessages : selectedSentMessages;
                         const chunks = [];
                         let lastDay = null;
 
-                        msgs.forEach((m) => {
+                        selectedMessages.forEach((m) => {
                           const d = safeDate(m.created_date);
-                          if (d) {
-                            if (!lastDay || !isSameDay(lastDay, d)) {
-                              chunks.push(<DaySeparator key={`day-${d.toISOString()}`} date={d} />);
-                              lastDay = d;
-                            }
+                          if (d && (!lastDay || !isSameDay(lastDay, d))) {
+                            chunks.push(<DaySeparator key={`day-${d.toISOString()}`} date={d} />);
+                            lastDay = d;
                           }
 
                           const sender = m.sender_email || m.created_by || '';
@@ -956,7 +1007,7 @@ export default function Messages() {
                                 time={d ? format(d, 'HH:mm', { locale: fr }) : ''}
                               />
 
-                              <div className={`mt-1 flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                              <div className={`mt-0.5 flex ${mine ? 'justify-end' : 'justify-start'}`}>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -964,7 +1015,7 @@ export default function Messages() {
                                     if (!ok) return;
                                     deleteOneMutation.mutate(m);
                                   }}
-                                  className="opacity-0 group-hover:opacity-100 transition text-xs text-gray-400 hover:text-rose-600 px-2 py-1"
+                                  className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition text-[11px] text-gray-400 hover:text-rose-600 px-2 py-1"
                                   title="Supprimer"
                                 >
                                   Supprimer
@@ -979,12 +1030,14 @@ export default function Messages() {
                     )}
                   </div>
 
+                  {/* Composer */}
                   {tab !== 'sent' && (
                     <div
                       className={[
-                        'mt-3 p-3 rounded-2xl border bg-white',
+                        'mt-2 rounded-xl border bg-white',
                         isDragging ? 'border-violet-400 ring-2 ring-violet-200' : ''
                       ].join(' ')}
+                      style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}
                       onDragEnter={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -1007,127 +1060,128 @@ export default function Messages() {
                         addFiles(e.dataTransfer.files);
                       }}
                     >
-                      {/* PREVIEW */}
-                      {pendingPreviews.length > 0 && (
-                        <div className="mb-3">
-                          <div className="flex items-center justify-between">
-                            <div className="text-xs text-gray-600">Pièces jointes</div>
-                            <button
-                              type="button"
-                              onClick={clearPending}
-                              className="text-xs text-rose-600 hover:text-rose-700"
-                            >
-                              Tout enlever
-                            </button>
+                      <div className="p-2.5">
+                        {/* PREVIEW */}
+                        {pendingPreviews.length > 0 && (
+                          <div className="mb-2.5">
+                            <div className="flex items-center justify-between">
+                              <div className="text-xs text-gray-600">Pièces jointes</div>
+                              <button
+                                type="button"
+                                onClick={clearPending}
+                                className="text-xs text-rose-600 hover:text-rose-700"
+                              >
+                                Tout enlever
+                              </button>
+                            </div>
+
+                            <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 gap-2">
+                              {pendingPreviews.map((p, idx) => {
+                                const isImg = String(p.type || '').startsWith('image/');
+                                const isVid = String(p.type || '').startsWith('video/');
+                                return (
+                                  <div key={p.id} className="relative overflow-hidden rounded-xl border bg-white">
+                                    <button
+                                      type="button"
+                                      onClick={() => removePending(idx)}
+                                      className="absolute top-1 right-1 z-10 bg-white/90 hover:bg-white rounded-full p-1 shadow"
+                                      title="Retirer"
+                                    >
+                                      <X className="w-4 h-4 text-gray-700" />
+                                    </button>
+
+                                    {isImg ? (
+                                      <img src={p.url} alt={p.name} className="w-full h-16 sm:h-20 object-cover" />
+                                    ) : isVid ? (
+                                      <video src={p.url} className="w-full h-16 sm:h-20 object-cover" />
+                                    ) : (
+                                      <div className="h-16 sm:h-20 flex items-center justify-center text-xs text-gray-600">
+                                        📎
+                                      </div>
+                                    )}
+
+                                    <div className="px-2 py-1 text-[10px] text-gray-500 truncate">{p.name}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
+                        )}
 
-                          <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 gap-2">
-                            {pendingPreviews.map((p, idx) => {
-                              const isImg = String(p.type || '').startsWith('image/');
-                              const isVid = String(p.type || '').startsWith('video/');
-                              return (
-                                <div key={p.id} className="relative overflow-hidden rounded-2xl border bg-white">
-                                  <button
-                                    type="button"
-                                    onClick={() => removePending(idx)}
-                                    className="absolute top-1 right-1 z-10 bg-white/90 hover:bg-white rounded-full p-1 shadow"
-                                    title="Retirer"
-                                  >
-                                    <X className="w-4 h-4 text-gray-700" />
-                                  </button>
+                        <div className="flex items-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="rounded-xl h-9 w-9 p-0"
+                            onClick={() => setEmojiOpen(true)}
+                            title="Ajouter un emoji"
+                          >
+                            <Smile className="w-4 h-4" />
+                          </Button>
 
-                                  {isImg ? (
-                                    <img src={p.url} alt={p.name} className="h-24 w-full object-cover" />
-                                  ) : isVid ? (
-                                    <video src={p.url} className="h-24 w-full object-cover" />
-                                  ) : (
-                                    <div className="h-24 flex items-center justify-center text-xs text-gray-600 p-2">
-                                      📎 {p.name}
-                                    </div>
-                                  )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="rounded-xl h-9 w-9 p-0"
+                            onClick={() => fileInputRef.current?.click()}
+                            title="Ajouter une photo ou une vidéo"
+                          >
+                            <Paperclip className="w-4 h-4" />
+                          </Button>
 
-                                  <div className="px-2 py-1 text-[11px] text-gray-500 truncate">{p.name}</div>
-                                </div>
-                              );
-                            })}
-                          </div>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*,video/*"
+                            multiple
+                            className="hidden"
+                            onChange={(e) => {
+                              addFiles(e.target.files);
+                              e.target.value = '';
+                            }}
+                          />
+
+                          <Textarea
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            placeholder={isDragging ? 'Dépose tes photos/vidéos ici ✨' : 'Écris un message…'}
+                            rows={2}
+                            className="rounded-xl resize-none bg-gray-50 border-gray-200 flex-1 text-sm"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                if (!sendMutation.isPending) sendMutation.mutate();
+                              }
+                            }}
+                          />
+
+                          <Button
+                            onClick={() => sendMutation.mutate()}
+                            disabled={sendMutation.isPending || (!draft.trim() && pendingFiles.length === 0)}
+                            className="rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white h-9 px-3"
+                            title="Envoyer"
+                          >
+                            {sendMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <>
+                                <Send className="w-4 h-4 sm:mr-2" />
+                                <span className="hidden sm:inline">Envoyer</span>
+                              </>
+                            )}
+                          </Button>
                         </div>
-                      )}
 
-                      <div className="flex items-end gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="rounded-xl"
-                          onClick={() => setEmojiOpen(true)}
-                          title="Ajouter un emoji"
-                        >
-                          <Smile className="w-4 h-4" />
-                        </Button>
-
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="rounded-xl"
-                          onClick={() => fileInputRef.current?.click()}
-                          title="Ajouter une photo ou une vidéo"
-                        >
-                          <Paperclip className="w-4 h-4 mr-2" />
-                          Photo/Vidéo
-                        </Button>
-
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          accept="image/*,video/*"
-                          multiple
-                          className="hidden"
-                          onChange={(e) => {
-                            addFiles(e.target.files);
-                            e.target.value = '';
-                          }}
-                        />
-
-                        <Textarea
-                          value={draft}
-                          onChange={(e) => setDraft(e.target.value)}
-                          placeholder={isDragging ? 'Dépose tes photos/vidéos ici ✨' : 'Écris un message…'}
-                          rows={2}
-                          className="rounded-2xl resize-none bg-gray-50 border-gray-200 flex-1"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault();
-                              if (!sendMutation.isPending) sendMutation.mutate();
-                            }
-                          }}
-                        />
-
-                        <Button
-                          onClick={() => sendMutation.mutate()}
-                          disabled={sendMutation.isPending || (!draft.trim() && pendingFiles.length === 0)}
-                          className="rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white"
-                          title="Envoyer"
-                        >
-                          {sendMutation.isPending ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <>
-                              <Send className="w-4 h-4 mr-2" />
-                              Envoyer
-                            </>
-                          )}
-                        </Button>
-                      </div>
-
-                      <div className="mt-2 flex items-center justify-between text-xs text-gray-400">
-                        <div>Entrée = envoyer • Shift+Entrée = saut de ligne</div>
-                        <div className="flex items-center gap-3">
-                          <span className="inline-flex items-center gap-1">
-                            <ImageIcon className="w-4 h-4" /> Photos
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <VideoIcon className="w-4 h-4" /> Vidéos
-                          </span>
+                        <div className="mt-2 flex items-center justify-between text-[11px] text-gray-400">
+                          <div>Entrée = envoyer • Shift+Entrée = saut de ligne</div>
+                          <div className="hidden sm:flex items-center gap-3">
+                            <span className="inline-flex items-center gap-1">
+                              <ImageIcon className="w-4 h-4" /> Photos
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <VideoIcon className="w-4 h-4" /> Vidéos
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1143,7 +1197,7 @@ export default function Messages() {
                       }}
                     />
                   )}
-                </>
+                </div>
               )}
             </CardContent>
           </Card>
